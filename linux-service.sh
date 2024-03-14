@@ -12,22 +12,37 @@ exit_handler() {
 
 trap exit_handler EXIT
 
-path='/home/ducptm/'
+path='/data/hydro-liberty/dbs_ha/'
 
 # module_name=$(find $path -maxdepth 1 -type d | grep -E "\.$1$")
 
 # Server.env/Server_off.env file
-server_off_env_file_update="/home/ducptm/server_off_vars.txt"
-server_off_env_file_backup="/home/ducptm/server_off.env_$(date +'%Y%m%d')"
-server_off_env_file="/home/ducptm/server_off.env"
+server_off_env_file_update="/home/quantri/ducptm/server_off_vars.txt"
+server_off_env_file_backup="/home/quantri/ducptm/server_off.env_$(date +'%Y%m%d')"
+server_off_env_file="/home/quantri/ducptm/server_off.env"
 
 # War directory
-dir_war_backup="/home/ducptm/dropins_$(date +'%Y%m%d')"
-dir_war="/home/ducptm/dropins"
+dir_war_backup="/home/quantri/ducptm/dropins_$(date +'%Y%m%d')"
+dir_war="/home/quantri/ducptm/dropins"
 
 #jvm.options file
-jvm_options_file_backup="/home/ducptm/jvm.options_$(date +'%Y%m%d')"
-jvm_options_file="/home/ducptm/jvm.options"
+jvm_options_file_backup="/home/quantri/ducptm/jvm.options_$(date +'%Y%m%d')"
+jvm_options_file="/home/quantri/ducptm/jvm.options"
+
+
+# # Server.env/Server_off.env file
+# server_off_env_file_update="$path$module_name/usr/servers/defaultServer/server_off_vars.txt"
+# server_off_env_file_backup="$path$module_name/usr/servers/defaultServer/server_off.env_$(date +'%Y%m%d')"
+# server_off_env_file="$path$module_name/usr/servers/defaultServer/server_off.env"
+
+# # War directory
+# dir_war_backup="$path$module_name/usr/servers/defaultServer/dropins_$(date +'%Y%m%d')"
+# dir_war="$path$module_name/usr/servers/defaultServer/dropins"
+
+# #jvm.options file
+# jvm_options_file_backup="$path$module_name/usr/servers/defaultServer/jvm.options_$(date +'%Y%m%d')"
+# jvm_options_file="$path$module_name/usr/servers/defaultServer/jvm.options"
+
 
 
 stop_module() {
@@ -44,7 +59,7 @@ stop_module() {
 back_up_war() {
     if [ ! -d $dir_war_backup ]; then
         mkdir -p $dir_war_backup
-        find "$dir_war" -type f -name "*.war" -exec cp {} "$dir_war_backup/$(basename {} .war)_$(date +'%Y%m%d').war" \;
+        find "$dir_war" -type f -name "*.war" -execdir cp {} "$dir_war_backup/{}_$(date +'%Y%m%d')" \;
     else
         echo "War files have been backed up. Ignore this step"
     fi
