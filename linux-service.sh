@@ -1,7 +1,35 @@
 #!/bin/bash
-path='/data/hydro-liberty/'
-server_off_vars_path="/home/quantri/ducptm/server_off_vars.txt"
-module_name=$1
+
+set -e
+
+exit_handler() {
+    local exit_code="$?"
+    if [ $exit_code -ne 0 ]; then
+        echo "Error: Script encountered an error. For more details, please contact ducptm@tpb.com.vn" >&2
+    fi
+    exit $exit_code
+}
+
+trap exit_handler EXIT
+
+path='/home/ducptm/'
+
+# module_name=$(find $path -maxdepth 1 -type d | grep -E "\.$1$")
+
+# Server.env/Server_off.env file
+server_off_env_file_update="/home/ducptm/server_off_vars.txt"
+server_off_env_file_backup="/home/ducptm/server_off.env_$(date +'%Y%m%d')"
+server_off_env_file="/home/ducptm/server_off.env"
+
+# War directory
+dir_war_backup="/home/ducptm/dropins_$(date +'%Y%m%d')"
+dir_war="/home/ducptm/dropins"
+
+#jvm.options file
+jvm_options_file_backup="/home/ducptm/jvm.options_$(date +'%Y%m%d')"
+jvm_options_file="/home/ducptm/jvm.options"
+
+
 stop_module() {
     pid=(`ps axu | grep $module_name | grep -v grep | awk {print $2}`)
     if [ -n "$pid" ];then
@@ -12,119 +40,121 @@ stop_module() {
         echo "This module has not been run"
     fi
 }
+
 back_up_war() {
-    dir_war_backup_path="$path$1/usr/servers/defaultServer/dropins_$(date +'%Y%m%d')"
-    dir_war_path="$path$1/usr/servers/defaultServer/dropins"
-    find "$dir_war_path" -type f -name "*.war" -exec cp {} "$dir_war_backup_path/$(basename {} .war)_$(date +'%Y%m%d').war" \;
+    if [ ! -d $dir_war_backup ]; then
+        mkdir -p $dir_war_backup
+        find "$dir_war" -type f -name "*.war" -exec cp {} "$dir_war_backup/$(basename {} .war)_$(date +'%Y%m%d').war" \;
+    else
+        echo "War files have been backed up. Ignore this step"
+    fi
+
 }
 back_up_jvm() {
-    cp $path$1/usr/servers/defaultServer/jvm.options $path$1/usr/servers/defaultServer/jvm.options_$(date +'%Y%m%d')
+    if [ ! -f $jvm_options_file_backup ]; then
+        cp $jvm_options_file $jvm_options_file_backup
+    else
+        echo "JVM Options file has been backed up. Ignore this step"
+    fi
 }
 back_up_server_off_env() {
-    cp $path$1/usr/servers/defaultServer/server_off.env $path$1/usr/servers/defaultServer/server_off.env_$(date +'%Y%m%d')
+    if [ ! -f $server_off_env_file_backup ]; then
+        cp $server_off_env_file $server_off_env_file_backup
+    else
+        echo "Server/Server_off env file has been backed up. Ignore this step"
+    fi
+    
 }
+
+pre_process(){
+    local line=$line
+    trimmed_line="${line#"${line%%[![:space:]]*}"}"
+    trimmed_line="${trimmed_line%"${trimmed_line##*[![:space:]]}"}"
+    echo $trimmed_line
+}
+
 get_details_server_off_env() {
-    # Initialize variables
-    is_the_first=false
-    current_action=""
-    declare -A dict_action
     declare -a list_action
-    if [ -f "$server_off_vars_path" ]; then
+    declare -A dict_action
+    is_the_first=false
+
+    if [ -f "$server_off_env_file_update" ]; then
         # Read the file line by line
         while IFS= read -r line; do
-            # Check if the line matches the pattern and it's not the first variable
-            if [[ $line =~ --\ ([[:alnum:]]+) && ! $is_the_first ]]; then
-                action="${line:3}"
-                echo $action
-                # Check if the action is not in the list_action
+            processed_line=$(pre_process $line)
+            if [[ $processed_line =~ --\ ([[:alnum:]]+) && $is_the_first ]]; then
+                action="${processed_line:3}"
                 if [[ ! " ${list_action[@]} " =~ " $action " ]]; then 
                     list_action+=("$action")
-                    dict_action["$action"]=()
                     current_action="$action"
                 fi
                 is_the_first=true
             # Check if the line is "--" and it's the first variable
-            elif [[ $line = "--" && $is_the_first ]]; then
+            elif [[ $processed_line = "--" && $is_the_first ]]; then
                 is_the_first=false
             # Check if it's the first variable
             elif $is_the_first; then
-                dict_action["$current_action"]+=("$line")
+                dict_action["$current_action"]+="$processed_line,"
             fi
-        done < $server_off_vars_path
+        done < $server_off_env_file_update
+
+        for key in "${!dict_action[@]}"; do
+            # Split the concatenated string back into an array
+            IFS=, read -ra value_arr <<< "${dict_action[$key]}"
+            eval "$key=\"${value_arr[@]}\""
+        done
+
     else
-        echo "File not found: $server_off_vars_path"
+        echo "Nothing to update Server/Server_off Env files"
     fi
 
-    echo $dict_action
-    echo $list_action
 
-    # Print dict_action
-    for key in "${!dict_action[@]}"; do
-        echo "Key: $key"
-        for value in "${dict_action[$key]}"; do
-            echo "Value: $value"
-        done
+}
+
+insert_server_off_env_vars() {
+    for i_var in $Insert; do
+        sed -i "\$a$i_var" $server_off_env_file
     done
 
 }
 
-# update_server_off_env() {
+update_server_off_env_vars() {
+    local time_execute=$time_execute
+    for i_var in $Update; do
+        IFS='=' read -r variable_name variable_value <<< "$i_var"
+        sed -i "/^$variable_name/ s/$/ #---- Updated, for more details check at $time_execute/" $server_off_env_file
+        sed -i "/^$variable_name/ s/^/#/" $server_off_env_file
+        sed -i "\$a$i_var" $server_off_env_file
+    done
 
-# }
-
-# insert_server_off_env() {
-    
-# }
-
-test() {
-    declare -a list_action
-    declare -A dict_action
-
-    if [ -f "$server_off_vars_path" ]; then
-        # Read the file line by line
-        while IFS= read -r line; do
-            trimmed_line="${line#"${line%%[![:space:]]*}"}"
-            trimmed_line="${trimmed_line%"${trimmed_line##*[![:space:]]}"}"
-            if [[ $line =~ --\ ([[:alnum:]]+) && ! $is_the_first ]]; then
-                action="${line:3}"
-                if [[ ! " ${list_action[@]} " =~ " $action " ]]; then 
-                    list_action+=("$action")
-                    dict_action["$action"]=[]
-                    current_action="$action"
-                fi
-                echo "Change is_the_first = true"
-                is_the_first=true
-            # Check if the line is "--" and it's the first variable
-            elif [[ $trimmed_line = "--" && $is_the_first ]]; then
-                echo "Change is_the_first = false"
-                is_the_first=false
-            # Check if it's the first variable
-            elif $is_the_first; then
-                echo "$line"
-                dict_action["$current_action"]+=["$line"]
-            fi
-        done < $server_off_vars_path
-
-    fi
-    # echo $list_action
-    # echo $dict_action
 }
 
-test1() { 
-    if [ -f "$server_off_vars_path" ]; then
-        # Read the file line by line
-        while IFS= read -r line; do
-            echo $line
-            trimmed_line="${line#"${line%%[![:space:]]*}"}"
-            trimmed_line="${trimmed_line%"${trimmed_line##*[![:space:]]}"}"
-            if [[ "$trimmed_line" == "--" ]]; then
-                echo "Change is_the_first = false"
-            # Check if it's the first variable
-            fi
-        done < $server_off_vars_path
-
-    fi
+deploy_server_off_env() {
+    time_execute=$(date +'%Y%m%d%H%M%S')
+    sed -i "\$a#$time_execute Insert/Update variables" $server_off_env_file
+    get_details_server_off_env
+    update_server_off_env_vars
+    insert_server_off_env_vars
 }
-test
 
-# get_details_server_off_env
+back_up() {
+   echo "---------- Back up War files ----------"
+   back_up_war
+   echo "Back up War files done"
+   echo "---------- Back up JVM Options files ----------"
+   back_up_jvm
+   echo "Back up JVM Options files done"
+   echo "---------- Back up Server/Server_off env files ----------"
+   back_up_server_off_env
+   echo "Back up Server/Server_off env files done"
+}
+
+deploy() {
+    deploy_server_off_env    
+}
+
+
+back_up
+echo "---------- Deploying ----------"
+deploy
+echo "Congratulations. Your deployment has been SUCCESS"
