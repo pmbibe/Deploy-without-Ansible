@@ -9,7 +9,6 @@ $listModuleFullFile = "./listModuleFull.txt"
 $servicePath = "/data"
 $specialServices = @('','')
 $ValidatedPortList = @()
-$ListServices = Get-Content -Path $listModuleFullFile
 
 function Get-MD5-File {
     param (
@@ -151,6 +150,7 @@ function Get-Validate-Port {
     
 }
 
+$ListServices = Get-Content -Path $listModuleFullFile
 Get-Validate-Port -List $ListServices
 Get-Validate-Port -List $specialServices
 
