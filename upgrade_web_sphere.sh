@@ -12,10 +12,11 @@ exit_handler() {
 
 trap exit_handler EXIT
 
-pmbibe_path='/data/pmbibe-ducptm/pmbibe/'
-ducptm_path='/data/pmbibe-ducptm/ducptm/'
+dbs_ha_path='/Your/Path/'
+platform_ha_path='/Your/Path/'
 web_sphere_path='/tmp/'
 web_sphere_zip='wlp24002.zip'
+web_sphere_directory='wlp_24.0.0.2'
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -31,6 +32,10 @@ while [[ $# -gt 0 ]]; do
             shift
             port_of_service="$1"
             ;;
+        -bv | --backup-verison)
+            shift
+            backup_version="$1"
+            ;;            
         *)
             echo "Upgrade webSphere
 
@@ -38,7 +43,7 @@ usage: upgrade_web_sphere.sh -a Action -st ServiceType -sp ServicePort
 
 Arguments:
    -a,  --action        Choose action: start, stop, backup, deploy or rollback
-   -st, --service-type  Choose action: ducptm or ducptm
+   -st, --service-type  Choose action: dbs or platform
    -sp, --service-port  Running port of service"
 
             exit 1
@@ -48,68 +53,122 @@ Arguments:
 done
 
 stop_module() {
-    local module_name=$1
 
-    pids=(`ps axu | grep $module_name | grep -v grep | awk '{print $2}'`)
+    local module_directory=$1
+
+    pid=(`ps axu | grep $module_directory | grep -v grep | awk '{print $2}'`)
     if [ -n "$pid" ];then
-        for pid in ${pids[@]}; do
-            echo "Stopping module with PID: ${pid} ..."
-            kill -9 $pid
-        done
+        echo "Stopping module ..."
+        kill -9 $pid
         echo "Module stopped"
     else
         echo "This module has not been run"
     fi
 }
-start_module() {
-    local module_name=$1
 
-    ${module_name}/bin/server start
+verify_version() {
+
+    local module_path=$1
+    local module_directory=$2
+    echo "Verifying Websphere version"
+    if [ -d ${module_path}/${module_directory} ]; then
+        chmod +x ${module_path}/${module_directory}/bin/server 
+        version=$(${module_path}/${module_directory}/bin/server version | awk 'END{print $4}')
+        echo "Your Websphere version is $version"
+
+    else
+        echo "Not found $module_directory."
+        exit 1
+    fi    
+
 
 }
 
-backup_web_sphere(){
-    local module_name=$1
 
-    cp -r ${module_name} ${module_name}_$(date +'%Y%m%d')
+start_module() {
+    local module_path=$1
+    local module_directory=$2
+    echo "Starting module"
+    if [ -d ${module_path}/${module_directory} ]; then
+        chmod +x ${module_path}/${module_directory}/bin/server && ${module_path}/${module_directory}/bin/server start
+    else
+        echo "Not found $module_directory."
+        exit 1
+    fi    
 
+}
+
+backup_module() {
+
+    local module_path=$1
+    local module_directory=$2
+    
+    echo "Backing up module $module_directory"
+    if [ -d ${module_path}/${module_directory} ]; then
+        cp -r ${module_path}/${module_directory} ${module_path}/${module_directory}_$(date +'%Y%m%d')
+        echo "Done. Backup directory: ${module_path}/${module_directory}_$(date +'%Y%m%d')"
+    else
+        echo "Not found $module_directory."
+        exit 1
+    fi
 }
 
 deploy_web_sphere(){
-    local module_name=$1
+    local module_path=$1
+    local module_directory=$2
+    local web_sphere_path=$3
+    local web_sphere_zip=$4
+    local web_sphere_directory=$5
     
+    echo "Deploying module $module_directory"
+
     if [ -f ${web_sphere_path}${web_sphere_zip} ]; then
-
-        IFS='.' read -r -a web_sphere <<< "$web_sphere_zip"
-
-        upzip ${web_sphere_path}${web_sphere_zip} -d ${web_sphere_path}
-
-        cp -r ${web_sphere_path}${web_sphere[1]}/wlp/* $module_name
+        unzip ${web_sphere_path}${web_sphere_zip} -d ${web_sphere_path}
+        rsync -azrv --exclude=${web_sphere_path}${web_sphere_directory}/wlp/usr ${web_sphere_path}${web_sphere_directory}/wlp/* ${module_path}/${module_directory}
 
     else
         echo "Not found. Copy ${web_sphere_zip} to ${web_sphere_path} first"
         exit 1
     fi
 
+    echo "Module has been deployed"
+
 }
 
 rollback_web_sphere(){
-    local module_name=$1
+    local module_path=$1
+    local module_directory=$2
+    local backup_version=$3
+    if [ -d ${module_path}/${module_directory}_${backup_version} ]; then
 
-    rm -rf ${module_name}
-    mv ${module_name}_$(date +'%Y%m%d') ${module_name}
+        stop_module $module_directory
+
+        echo "Rollback from ${backup_version} to current version"
+
+        rm -rf ${module_path}/${module_directory}
+
+        mv ${module_path}/${module_directory}_${backup_version} ${module_path}/${module_directory}
+
+        echo "Rollback done"
+
+        # start_module $module_name
+
+    else
+        echo "Not found Backup version ${backup_version}"
+        exit 1
+    fi
 }
 
 
 case "$service_type" in
-    "pmbibe")
-        path=$pmbibe_path
+    "dbs")
+        path=$dbs_ha_path
         ;;
-    "ducptm")
-        path=$ducptm_path
+    "platform")
+        path=$platform_ha_path
         ;;
     *)
-        echo "Choose action: ducptm or pmbibe"
+        echo "Choose action: dbs or platform"
         exit 1
         ;;
 esac
@@ -136,15 +195,15 @@ case "$action" in
         ;;
     "backup")
         echo "Backup module ${module_name_arr[-1]}"
-        backup_web_sphere $module_name
+        backup_module $path $module_name
         ;;
     "deploy")
         echo "Deploy module ${module_name_arr[-1]}"
-        deploy_web_sphere $module_name
+        deploy_web_sphere $path $module_name $web_sphere_path $web_sphere_zip $web_sphere_directory
         ;;
     "rollback")
         echo "Rollback module ${module_name_arr[-1]}"
-        rollback_web_sphere $module_name
+        rollback_web_sphere $path $module_name $backup_version
         ;;
     *)
         echo "Choose action: start, stop, backup, deploy or rollback"
