@@ -12,31 +12,39 @@ exit_handler() {
 
 trap exit_handler EXIT
 
-path=''
+path='/Your/Path/'
 
 phase=$1
-port_of_service=$2
+folder_deploy_today=$2
 
-# module_name=$(find $path -maxdepth 1 -type d | grep -E "\.$port_of_service$")
+IFS='_' read -r -a folder_deploy_today_array <<< "$folder_deploy_today"
+port_of_service=${folder_deploy_today_array[1]}
+
+module_name=$(find $path -maxdepth 1 -type d | grep -E "\.$port_of_service$")
+
+IFS='/' read -r -a module_name_array <<< "$module_name"
+
+module_name=${module_name_array[-1]}
 
 echo "********** Found MODULE: $module_name FROM PORT $port_of_service **********"
 
-module_name="tpb"
-
-dir_all_needed_files_deployed="/home/quantri/ducptm/${module_name}_deploy_today"
+dir_all_needed_files_deployed="/Your/Home/Path/$folder_deploy_today"
 
 # Server.env/Server_off.env file
-file_server_off_env_update="/home/quantri/ducptm/server_off_vars.txt"
-file_server_off_env_backup="/home/quantri/ducptm/server_off.env_$(date +'%Y%m%d')"
-file_server_off_env="/home/quantri/ducptm/server_off.env"
+file_server_off_env_update="$dir_all_needed_files_deployed/server_off_vars.txt"
+file_server_off_env_backup="$path$module_name/usr/servers/defaultServer/server.env_$(date +'%Y%m%d')"
+file_server_off_env="$path$module_name/usr/servers/defaultServer/server.env"
 
 # War directory
-dir_war_backup="/home/quantri/ducptm/dropins_$(date +'%Y%m%d')"
-dir_war="/home/quantri/ducptm/dropins"
+dir_war_deploy="$dir_all_needed_files_deployed/dropins"
+dir_war_backup="$path$module_name/usr/servers/defaultServer/dropins_$(date +'%Y%m%d')"
+dir_war="$path$module_name/usr/servers/defaultServer/dropins"
 
 #jvm.options file
-file_jvm_options_backup="/home/quantri/ducptm/jvm.options_$(date +'%Y%m%d')"
-file_jvm_options="/home/quantri/ducptm/jvm.options"
+file_jvm_options_backup="$path$module_name/usr/servers/defaultServer/jvm.options_$(date +'%Y%m%d')"
+file_jvm_options="$path$module_name/usr/servers/defaultServer/jvm.options"
+
+
 
 stop_module() {
     pid=(`ps axu | grep $module_name | grep -v grep | awk {print $2}`)
@@ -52,9 +60,9 @@ stop_module() {
 back_up_war() {
     if [ ! -d $dir_war_backup ]; then
         mkdir -p $dir_war_backup
-        find "$dir_war" -type f -name "*.war" -execdir cp {} "$dir_war_backup/{}_$(date +'%Y%m%d')" \;
+        find "$dir_war" -type f \( -name "*.war" -o -name "*.jar" \) -exec sh -c 'echo "$(date +%Y/%m/%d\ %H:%M:%S) Found $(basename $1)"; cp "$1" "$2/$(basename "$1")_$(date +%Y%m%d)"' sh {} "$dir_war_backup" \;
     else
-        echo "War files have been backed up. Ignore this step"
+        echo "$(date +'%Y/%m/%d %H:%M:%S') War files have been backed up. Ignore this step"
     fi
 
 }
@@ -62,14 +70,14 @@ back_up_jvm() {
     if [ ! -f $file_jvm_options_backup ]; then
         cp $file_jvm_options $file_jvm_options_backup
     else
-        echo "JVM Options file has been backed up. Ignore this step"
+        echo "$(date +'%Y/%m/%d %H:%M:%S') JVM Options file has been backed up. Ignore this step"
     fi
 }
 back_up_server_off_env() {
     if [ ! -f $file_server_off_env_backup ]; then
         cp $file_server_off_env $file_server_off_env_backup
     else
-        echo "Server/Server_off env file has been backed up. Ignore this step"
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Server/Server_off env file has been backed up. Ignore this step"
     fi
 
 }
@@ -113,13 +121,26 @@ get_details_server_off_env() {
         done
 
     else
-        echo "Nothing to update Server/Server_off Env files"
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Nothing to update Server/Server_off Env files"
     fi
 
 
 }
 
+
+check_is_deploy_server_off_env() {
+    action=$1
+    for i_var in ${!action}; do
+        if grep -q -E "^$i_var$" "$file_server_off_env"; then
+            # Replace the value of Insert variable based on the action variable
+            eval "$action=\${$action[@]/$i_var}"                   
+        fi
+    done 
+
+}
+
 insert_server_off_env_vars() {
+    check_is_deploy_server_off_env 'Insert'
     for i_var in $Insert; do
         sed -i "\$a$i_var" $file_server_off_env
     done
@@ -127,37 +148,39 @@ insert_server_off_env_vars() {
 }
 
 update_server_off_env_vars() {
-    local time_execute=$time_execute
+    local BPM=$BPM
+    check_is_deploy_server_off_env 'Update'
     for i_var in $Update; do
         IFS='=' read -r variable_name variable_value <<< "$i_var"
-        sed -i "/^$variable_name/ s/$/ #---- Updated, for more details check at $time_execute/" $file_server_off_env
+        sed -i "/^$variable_name/ s/$/ #---- Updated, for more details check at $BPM/" $file_server_off_env
         sed -i "/^$variable_name/ s/^/#/" $file_server_off_env
         sed -i "\$a$i_var" $file_server_off_env
     done
 
 }
-
 deploy_server_off_env() {
-    time_execute=$(date +'%Y%m%d%H%M%S')
-    sed -i "\$a#$time_execute Insert/Update variables" $file_server_off_env
+    IFS='_' read -r -a folder_deploy_today_array <<< "$folder_deploy_today"
+    BPM=${folder_deploy_today_array[-1]}
+    sed -i "\$a#$BPM Insert/Update variables" $file_server_off_env
     get_details_server_off_env
     update_server_off_env_vars
     insert_server_off_env_vars
 }
 
 deploy_wars_files() {
-    if [ ! -d $dir_all_needed_files_deployed/dropins ]; then
-        echo "Please run PRE-DEPLOY first" >&2
+    if [ ! -d $dir_war_deploy ]; then
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Please run PRE-DEPLOY first" >&2
         exit 1
     else
-        war_files=$(find "$dir_all_needed_files_deployed/dropins" -type f -name "*.war")
-        # Check if the variable war_files is empty
+        war_files=$(find "$dir_war_deploy" -type f \( -name "*.war" -o -name "*.jar" \))
+        # Check if the variable war_files is not empty
         if [ -n "$war_files" ]; then
-            find "$dir_all_needed_files_deployed/dropins" -type f -name "*.war" -execdir cp {} "$dir_war/{}" \;
+            echo "$(date +'%Y/%m/%d %H:%M:%S') Copying files to $dir_war ..."
+            
+            cp -t "$dir_war" $war_files
         else
             # Print an error message if no .war files are found
-            echo "Error: No .war files found in $dir_all_needed_files_deployed/dropins" >&2
-            exit 1
+            echo "$(date +'%Y/%m/%d %H:%M:%S') No .war/.jar files found in $dir_war_deploy" >&2
         fi
         
     fi
@@ -165,66 +188,74 @@ deploy_wars_files() {
 
 deploy_jvm_options_file() {
     if [ ! -d $dir_all_needed_files_deployed ]; then
-        echo "Please run PRE-DEPLOY first" >&2
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Please run PRE-DEPLOY first" >&2
         exit 1
     fi
     if [ ! -f $dir_all_needed_files_deployed/jvm.options ]; then
-        echo "Error: No jvm.options file found in $dir_all_needed_files_deployed" >&2
-        exit 1
+        echo "$(date +'%Y/%m/%d %H:%M:%S') No jvm.options file found in $dir_all_needed_files_deployed" >&2
     else
         cp $dir_all_needed_files_deployed/jvm.options $file_jvm_options
     fi
 }
 
 back_up() {
-   echo "---------- Back up War files ----------"
+   echo "$(date +'%Y/%m/%d %H:%M:%S') ---------- Back up War files ----------"
    back_up_war
-   echo "Back up War files done"
-   echo "---------- Back up JVM Options files ----------"
+   echo "$(date +'%Y/%m/%d %H:%M:%S') Back up War files done"
+   echo "$(date +'%Y/%m/%d %H:%M:%S') ---------- Back up JVM Options files ----------"
    back_up_jvm
-   echo "Back up JVM Options files done"
-   echo "---------- Back up Server/Server_off env files ----------"
+   echo "$(date +'%Y/%m/%d %H:%M:%S') Back up JVM Options files done"
+   echo "$(date +'%Y/%m/%d %H:%M:%S') ---------- Back up Server/Server_off env files ----------"
    back_up_server_off_env
-   echo "Back up Server/Server_off env files done"
+   echo "$(date +'%Y/%m/%d %H:%M:%S') Back up Server/Server_off env files done"
 }
 
 deploy() {
-    echo "---------- Deploying War files ----------"
+    echo "$(date +'%Y/%m/%d %H:%M:%S') ---------- Deploying War files ----------"
     deploy_wars_files
-    echo "Deploy War files DONE"
-    echo "---------- Deploying Server/Server_off env files ----------"
+    echo "$(date +'%Y/%m/%d %H:%M:%S') Deploy War files DONE"
+    echo "$(date +'%Y/%m/%d %H:%M:%S') ---------- Deploying Server/Server_off env files ----------"
     deploy_server_off_env
-    echo "Deploy Server/Server_off env files DONE"
-    echo "---------- Deploying jvm.options files ----------"
+    echo "$(date +'%Y/%m/%d %H:%M:%S') Deploy Server/Server_off env files DONE"
+    echo "$(date +'%Y/%m/%d %H:%M:%S') ---------- Deploying jvm.options files ----------"
     deploy_jvm_options_file
-    echo "Deploy jvm.options files DONE"
+    echo "$(date +'%Y/%m/%d %H:%M:%S') Deploy jvm.options files DONE"
 
+}
+
+check_exist_directory() {
+    dir=$1
+    if [ ! -d $dir ]; then
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Not found $dir. Creating ... Re-try later"
+        mkdir -p $dir
+        exit 1
+    else
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Found $dir"
+    fi
+        
 }
 
 pre_deploy() {
-    if [ ! -d $dir_all_needed_files_deployed ]; then
-        mkdir -p $dir_all_needed_files_deployed
-        if [ ! -d $dir_all_needed_files_deployed/dropins ]; then
-            mkdir -p $dir_all_needed_files_deployed/dropins
-        fi
-    fi
+    check_exist_directory $dir_all_needed_files_deployed
+    check_exist_directory $dir_war_deploy
 }
+
 
 case "$phase" in
     "pre_deploy")
-        echo "---------- Pre-Deploying ----------"
+        echo "$(date +'%Y/%m/%d %H:%M:%S') ---------- Pre-Deploying ----------"
         pre_deploy
-        echo "Pre-Deploy DONE"
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Pre-Deploy DONE"
         ;;
     "back_up")
-        echo "---------- Backing up ----------"
+        echo "$(date +'%Y/%m/%d %H:%M:%S') ---------- Backing up ----------"
         back_up
-        echo "Back up DONE"
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Back up DONE"
         ;;
     "deploy")
-        echo "---------- Deploying ----------"
+        echo "$(date +'%Y/%m/%d %H:%M:%S') ---------- Deploying ----------"
         deploy
-        echo "Congratulations. Your deployment has been SUCCESS"
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Your deployment has been SUCCESS"
         ;;
     *)
         echo "Choose phase: pre_deploy, back_up or deploy"
