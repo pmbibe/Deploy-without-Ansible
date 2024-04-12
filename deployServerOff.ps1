@@ -2,11 +2,13 @@ param(
     [Parameter(Mandatory=$false)][string[]]$OFFServer= @('List-IP-Address-Your-Server'),
     [Parameter(Mandatory=$false)][string[]]$ActiveServer= @('List-IP-Address-Your-Server'),
     [Parameter(Mandatory=$false)][string]$PortService,
+    [Parameter(Mandatory=$true)][string]$BPM,
     [Parameter(Mandatory=$false)][string[]]$MultiplePortServices,
     [Parameter(Mandatory=$false)][ValidateSet('Y','YES')][string]$isUpdateListModuleFull,
-    [Parameter()][string]$OFFUser = 'hydro',
-    [Parameter()][string]$ActiveUser = 'hydro'
+    [Parameter()][string]$OFFUser = 'Your-User',
+    [Parameter()][string]$ActiveUser = 'Your-User'
 )
+
 $homePath = "/Your/Home/Path"
 $scriptDeploy = "${homePath}/runUpdateModuleOFF_ver2.sh"
 $scriptEdgeManager = "${homePath}/edge_manager.sh"
@@ -17,12 +19,12 @@ function Step-Pre-Deploy {
     param (
         $Username,
         $Hostname,
-        [Parameter(Mandatory=$true)][string]$PortService
+        $dirAllNeededFilesDeployed
     )
 
-    $dirAllNeededFilesDeployed="${PortService}_deploy_today"
+    
     $dirWarDeploy="${dirAllNeededFilesDeployed}/dropins"
-	$fileServerUpdate="${dirAllNeededFilesDeployed}/server_off_vars.txt"
+	$fileServerUpdate="${dirAllNeededFilesDeployed}/Server_off_vars.txt"
 
     if (Test-Path -Path $dirAllNeededFilesDeployed) {
         if (-not (Test-Path $dirWarDeploy)) {
@@ -31,7 +33,7 @@ function Step-Pre-Deploy {
 			exit
         } else {
 			Write-Host "Copying...."
-            scp -r $dirAllNeededFilesDeployed ${Username}@${Hostname}:${homePath}
+            Write-Host "scp -r $dirAllNeededFilesDeployed ${Username}@${Hostname}:${homePath}"
         }
     } else {
         New-Item -ItemType Directory -Path $dirAllNeededFilesDeployed -Force
@@ -46,10 +48,10 @@ function Step-Backup {
     param (
         $Username,
         $Hostname,
-        [Parameter(Mandatory=$true)][string]$PortService
+        $dirAllNeededFilesDeployed
     )
 
-    $sshCommand = "ssh ${Username}@${Hostname} 'sh $scriptDeploy back_up $PortService'"
+    $sshCommand = "ssh ${Username}@${Hostname} 'sh $scriptDeploy back_up $dirAllNeededFilesDeployed'"
 
     Invoke-Expression -Command $sshCommand
     
@@ -59,10 +61,10 @@ function Step-Deploy {
     param (
         $Username,
         $Hostname,
-        [Parameter(Mandatory=$true)][string]$PortService
+        $dirAllNeededFilesDeployed
     )
 
-    $sshCommand = "ssh ${Username}@${Hostname} 'sh $scriptDeploy deploy $PortService'"
+    $sshCommand = "ssh ${Username}@${Hostname} 'sh $scriptDeploy deploy $dirAllNeededFilesDeployed'"
 
     Invoke-Expression -Command $sshCommand
     
@@ -184,15 +186,26 @@ function Step-Validate-Multiple-Port-Services {
 
 }
 
+function Step-Delivery {
+    param (
+        $Username,
+        $ListServer,
+        [Parameter(Mandatory=$true)][string]$PortService
+    )
+    
+    $dirAllNeededFilesDeployed="${PortService}_deploy_today_${BPM}"
+    
+    foreach ($Server in $ListServer) {
+        Step-Pre-Deploy -Username $Username -Hostname $Server -dirAllNeededFilesDeployed $dirAllNeededFilesDeployed
+        Step-Backup -Username $Username -Hostname $Server -dirAllNeededFilesDeployed $dirAllNeededFilesDeployed
+        Step-Deploy -Username $Username -Hostname $Server -dirAllNeededFilesDeployed $dirAllNeededFilesDeployed
+    }       
+}
+
 if (Step-Validate-Multiple-Port-Services -MultiplePortServices $MultiplePortServices) {
     Write-Host "Use MultiplePortServices"
     foreach ($PortService in $MultiplePortServices) {
-        foreach ($server in $OFFServer) {
-            Step-Pre-Deploy -Username $OFFUser -Hostname $server -PortService $PortService
-            Step-Backup -Username $OFFUser -Hostname $server -PortService $PortService
-            Step-Deploy -Username $OFFUser -Hostname $server -PortService $PortService
-
-        }
+        Step-Delivery -Username $OFFUser -ListServer $OFFServer -PortService $PortService
     }
 } else {
     Write-Warning "Invalid MultiplePortServices. Use PortServices"
@@ -222,18 +235,13 @@ if (Step-Validate-Multiple-Port-Services -MultiplePortServices $MultiplePortServ
                 }
             }    
         }    
-    }
+    } 
 
     if (-not (Step-Validate-Port-Service -PortService $PortService)) {
 
         Write-Host "Your Service will be deployed in a few minutes" -ForegroundColor Green
-        foreach ($server in $OFFServer) {
-
-            Step-Pre-Deploy -Username $OFFUser -Hostname $server -PortService $PortService
-            Step-Backup -Username $OFFUser -Hostname $server -PortService $PortService
-            Step-Deploy -Username $OFFUser -Hostname $server -PortService $PortService
-
-        }   
+        
+        Step-Delivery -Username $OFFUser -ListServer $OFFServer -PortService $PortService
 
         Write-Host "Congratulations. Your Service has been deployed." -ForegroundColor Green
 
