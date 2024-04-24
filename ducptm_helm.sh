@@ -74,9 +74,10 @@ insert_chart_fullname(){
             pre_line_result=$(grep -n "$find_line" $file)
             # Use parameter expansion to extract the number before ':'
             line_number=$(($(echo "$pre_line_result" | cut -d ':' -f 1) + 1))
-
-            sed -i "$line_number i $line_2" "$file"
-            sed -i "$line_number i $line_1" "$file"
+            if [[ $line_number -gt 0 ]]; then
+                sed -i "$line_number i $line_2" "$file"
+                sed -i "$line_number i $line_1" "$file"
+            fi
 
         fi
     done 
@@ -111,10 +112,12 @@ insert_config_files_by_type(){
     pre_line_result=$(grep -n "$server_env_line" $file)
     line_number=$( echo "$pre_line_result" | cut -d ':' -f 1)
     # echo "$line_number ------- $file"
-    sed -i "$(($line_number+1)) i \    $line_1" "$file"
-    sed -i "$(($line_number+2)) i $line_2" "$file"
-    sed -i "$(($line_number+3)) i \    $line_3" "$file"
-    sed -i "$(($line_number+5)) i \    $line_4" "$file"
+    if [[ $line_number -gt 0 ]]; then
+        sed -i "$(($line_number+1)) i \    $line_1" "$file"
+        sed -i "$(($line_number+2)) i $line_2" "$file"
+        sed -i "$(($line_number+3)) i \    $line_3" "$file"
+        sed -i "$(($line_number+5)) i \    $line_4" "$file"
+    fi
     # echo "Insert Config File $file by $file_type -- Done" 
 }
 
@@ -220,16 +223,17 @@ modify_min_replicas() {
             current_value=$(echo "$line" | awk '{print $2}')
             pre_line_result=$(grep -n "minReplicas:" $file_path)
             line_number=$(echo "$pre_line_result" | cut -d ':' -f 1)
-
-            if [[ $current_value -ge 3 && $current_value -le 4 ]]; then
-                sed -i '/^\s*minReplicas:/s/^/#/; ' $file_path
-                sed -i "$(($line_number+1)) i \  minReplicas: 2" $file_path                
-            elif [[ $current_value -ge 5 && $current_value -le 6 ]]; then
-                sed -i '/^\s*minReplicas:/s/^/#/; ' $file_path
-                sed -i "$(($line_number+1)) i \  minReplicas: 3" $file_path                
-            elif [[ $current_value -gt 10 ]]; then
-                sed -i '/^\s*minReplicas:/s/^/#/; ' $file_path
-                sed -i "$(($line_number+1)) i \  minReplicas: 5" $file_path
+            if [[ $line_number -gt 0 ]]; then
+                if [[ $current_value -ge 3 && $current_value -le 4 ]]; then
+                    sed -i '/^\s*minReplicas:/s/^/#/; ' $file_path
+                    sed -i "$(($line_number+1)) i \  minReplicas: 2" $file_path                
+                elif [[ $current_value -ge 5 && $current_value -le 6 ]]; then
+                    sed -i '/^\s*minReplicas:/s/^/#/; ' $file_path
+                    sed -i "$(($line_number+1)) i \  minReplicas: 3" $file_path                
+                elif [[ $current_value -gt 10 ]]; then
+                    sed -i '/^\s*minReplicas:/s/^/#/; ' $file_path
+                    sed -i "$(($line_number+1)) i \  minReplicas: 5" $file_path
+                fi
             fi
         fi
     done < "$file_path"
@@ -248,16 +252,17 @@ modify_max_replicas() {
             current_value=$(echo "$line" | awk '{print $2}')
             pre_line_result=$(grep -n "maxReplicas:" $file_path)
             line_number=$(echo "$pre_line_result" | cut -d ':' -f 1)
-
-            if [[ $current_value -ge 5 && $current_value -le 6 ]]; then
-                sed -i '/^\s*maxReplicas:/s/^/#/; ' $file_path
-                sed -i "$(($line_number+1)) i \  maxReplicas: 3" $file_path                
-            elif [[ $current_value -lt 8 && $current_value -gt 6 ]]; then
-                sed -i '/^\s*maxReplicas:/s/^/#/; ' $file_path
-                sed -i "$(($line_number+1)) i \  maxReplicas: 4" $file_path                
-            elif [[ $current_value -lt 16 && $current_value -gt 8 ]]; then
-                sed -i '/^\s*maxReplicas:/s/^/#/; ' $file_path
-                sed -i "$(($line_number+1)) i \  maxReplicas: 8" $file_path
+            if [[ $line_number -gt 0 ]]; then
+                if [[ $current_value -ge 5 && $current_value -le 6 ]]; then
+                    sed -i '/^\s*maxReplicas:/s/^/#/; ' $file_path
+                    sed -i "$(($line_number+1)) i \  maxReplicas: 3" $file_path                
+                elif [[ $current_value -lt 8 && $current_value -gt 6 ]]; then
+                    sed -i '/^\s*maxReplicas:/s/^/#/; ' $file_path
+                    sed -i "$(($line_number+1)) i \  maxReplicas: 4" $file_path                
+                elif [[ $current_value -lt 16 && $current_value -gt 8 ]]; then
+                    sed -i '/^\s*maxReplicas:/s/^/#/; ' $file_path
+                    sed -i "$(($line_number+1)) i \  maxReplicas: 8" $file_path
+                fi
             fi
         fi
     done < "$file_path"
@@ -308,7 +313,9 @@ change_edge_service_template(){
     sed -i '/{{- include "your-text.labels" . | nindent 4 }}/s/^/#/' $file
     pre_line_result=$(grep -n '{{- include "your-text.labels" . | nindent 4 }}' $file)
     line_number=$(echo "$pre_line_result" | cut -d ':' -f 1)
-    sed -i "$(($line_number+1)) i \    app.kubernetes.io/name: {{ include \"your-text.name\" . }}" $file
+    if [[ $line_number -gt 0 ]]; then
+        sed -i "$(($line_number+1)) i \    app.kubernetes.io/name: {{ include \"your-text.name\" . }}" $file
+    fi
     # echo "Change edge service template file -- Done"
 }
 
