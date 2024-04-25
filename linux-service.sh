@@ -18,7 +18,7 @@ phase=$1
 folder_deploy_today=$2
 
 IFS='_' read -r -a folder_deploy_today_array <<< "$folder_deploy_today"
-port_of_service=${folder_deploy_today_array[1]}
+port_of_service=${folder_deploy_today_array[0]}
 
 module_name=$(find $path -maxdepth 1 -type d | grep -E "\.$port_of_service$")
 
@@ -240,6 +240,45 @@ pre_deploy() {
     check_exist_directory $dir_war_deploy
 }
 
+rollback_war() {
+    version=$1
+
+    if [ ! -d "${dir_war}_$version" ]; then
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Nothing to rollback version $version. Ignore this step"
+    else
+        find "${dir_war}_$version" -type f \( -name "*.war_${version}" -o -name "*.jar_${version}" \) -exec sh -c 'echo "$(date +%Y/%m/%d\ %H:%M:%S) Found $(basename $1)"; file_name=$(basename $1); original_file_name="${file_name%_*}";  cp "$1" "$2/$original_file_name"' sh {} "${dir_war}" \;
+    fi
+
+}
+rollback_jvm() {
+    version=$1
+
+    if [ ! -f "${file_jvm_options}_$version" ]; then
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Nothing to rollback JVM Options file version $version. Ignore this step"
+    else
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Copy ${file_jvm_options}_$version to $file_jvm_options"
+        cp "${file_jvm_options}_$version" "$file_jvm_options"
+    fi
+}
+rollback_server_off_env() {
+    version=$1
+
+    if [ ! -f "${file_server_off_env}_$version" ]; then
+        
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Nothing to rollback Server/Server_off env file version $version. Ignore this step"
+    else
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Copy ${file_server_off_env}_$version to $file_server_off_env"
+        cp "${file_server_off_env}_$version" "$file_server_off_env"
+    fi
+
+}
+
+rollback(){
+    version=$1
+    rollback_war $version
+    rollback_jvm $version
+    rollback_server_off_env $version
+}
 
 case "$phase" in
     "pre_deploy")
@@ -257,6 +296,13 @@ case "$phase" in
         deploy
         echo "$(date +'%Y/%m/%d %H:%M:%S') Your deployment has been SUCCESS"
         ;;
+    "rollback")
+        version=$2
+        echo "$(date +'%Y/%m/%d %H:%M:%S') ---------- Rollbacking to version $version ----------"
+        rollback $version
+        echo "$(date +'%Y/%m/%d %H:%M:%S') Rollback has been SUCCESS"
+        ;;             
+    *)        
     *)
         echo "Choose phase: pre_deploy, back_up or deploy"
         ;;
