@@ -110,13 +110,13 @@ get_details_server_off_env() {
                 is_the_first=false
             # Check if it's the first variable
             elif $is_the_first; then
-                dict_action["$current_action"]+="$processed_line+"
+                dict_action["$current_action"]+="$processed_line|"
             fi
         done < $file_server_off_env_update
 
         for key in "${!dict_action[@]}"; do
             # Split the concatenated string back into an array
-            IFS=+ read -ra value_arr <<< "${dict_action[$key]}"
+            IFS="|" read -ra value_arr <<< "${dict_action[$key]}"
             eval "$key=\"${value_arr[@]}\""
         done
 
