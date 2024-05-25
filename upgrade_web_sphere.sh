@@ -1,21 +1,11 @@
 #!/bin/bash
 
-set -e
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
 
-exit_handler() {
-    local exit_code="$?"
-    if [ $exit_code -ne 0 ]; then
-        echo "Error: Script encountered an error. For more details, please contact ducptm@tpb.com.vn" >&2
-    fi
-    exit $exit_code
-}
-
-trap exit_handler EXIT
-
-dbs_ha_path='/Your/Path/'
-platform_ha_path='/Your/Path/'
 web_sphere_path='/tmp/'
-web_sphere_zip='wlp24002.zip'
+web_sphere_zip='wlp_24002.zip'
 web_sphere_directory='wlp_24.0.0.2'
 
 while [[ $# -gt 0 ]]; do
@@ -24,27 +14,23 @@ while [[ $# -gt 0 ]]; do
             shift
             action="$1"
             ;;
-        -st | --service-type)
+        -s | --service)
             shift
-            service_type="$1"
-            ;;
-        -sp | --service-port)
-            shift
-            port_of_service="$1"
-            ;;
+            service_d="$1"
+            ;;            
         -bv | --backup-verison)
             shift
             backup_version="$1"
-            ;;            
+            ;;
+
         *)
             echo "Upgrade webSphere
 
-usage: upgrade_web_sphere.sh -a Action -st ServiceType -sp ServicePort
+usage: upgrade_web_sphere.sh -a Action
 
 Arguments:
-   -a,  --action        Choose action: start, stop, backup, deploy or rollback
-   -st, --service-type  Choose action: dbs or platform
-   -sp, --service-port  Running port of service"
+   -a,  --action        Choose action: all, start, stop, backup, deploy or rollback
+   all: Run stop, backup, deploy and start service"
 
             exit 1
             ;;
@@ -52,15 +38,38 @@ Arguments:
     shift
 done
 
+
+bi_service=('')
+
+be=('')
+
+exceptional_service=('')
+
+pm_service=('')
+
+get_service_path() {
+    local service=$1
+    if [[ " ${bi_service[*]} " =~ " $service " ]]; then
+        echo "/data/ducptm/bi"
+    elif [[ " ${be[*]} " =~ " $service " ]]; then
+        echo "/data/ducptm/be"
+    elif [[ " ${exceptional_service[*]} " =~ " $service " ]]; then
+        echo "/data/ducptm"    
+    elif [[ " ${pm_service[*]} " =~ " $service " ]]; then
+        echo "/data/ducptm/pm"           
+    fi
+}
+
 stop_module() {
 
     local module_directory=$1
 
     pid=(`ps axu | grep $module_directory | grep -v grep | awk '{print $2}'`)
     if [ -n "$pid" ];then
-        echo "Stopping module ..."
+        echo "Stopping module $module_directory ..."
         kill -9 $pid
-        echo "Module stopped"
+        echo $pid
+        echo "Module $module_directory stopped"
     else
         echo "This module has not been run"
     fi
@@ -70,11 +79,11 @@ verify_version() {
 
     local module_path=$1
     local module_directory=$2
-    echo "Verifying Websphere version"
+    echo "Verifying Websphere version $module_directory"
     if [ -d ${module_path}/${module_directory} ]; then
         chmod +x ${module_path}/${module_directory}/bin/server 
         version=$(${module_path}/${module_directory}/bin/server version | awk 'END{print $4}')
-        echo "Your Websphere version is $version"
+        echo "Your Websphere version $module_directory is $version"
 
     else
         echo "Not found $module_directory."
@@ -84,11 +93,10 @@ verify_version() {
 
 }
 
-
 start_module() {
     local module_path=$1
     local module_directory=$2
-    echo "Starting module"
+    echo "Starting module $module_directory"
     if [ -d ${module_path}/${module_directory} ]; then
         chmod +x ${module_path}/${module_directory}/bin/server && ${module_path}/${module_directory}/bin/server start
     else
@@ -123,17 +131,18 @@ deploy_web_sphere(){
     echo "Deploying module $module_directory"
 
     if [ -f ${web_sphere_path}${web_sphere_zip} ]; then
-        unzip ${web_sphere_path}${web_sphere_zip} -d ${web_sphere_path}
-        rsync -azrv --exclude=${web_sphere_path}${web_sphere_directory}/wlp/usr ${web_sphere_path}${web_sphere_directory}/wlp/* ${module_path}/${module_directory}
+        # unzip ${web_sphere_path}${web_sphere_zip} -d ${web_sphere_path}
+        rsync -azr --exclude=usr ${web_sphere_path}${web_sphere_directory}/wlp/* ${module_path}/${module_directory}
 
     else
         echo "Not found. Copy ${web_sphere_zip} to ${web_sphere_path} first"
         exit 1
     fi
 
-    echo "Module has been deployed"
+    echo "Module $module_directory has been deployed"
 
 }
+
 
 rollback_web_sphere(){
     local module_path=$1
@@ -141,7 +150,7 @@ rollback_web_sphere(){
     local backup_version=$3
     if [ -d ${module_path}/${module_directory}_${backup_version} ]; then
 
-        stop_module $module_directory
+        # stop_module $module_directory
 
         echo "Rollback from ${backup_version} to current version"
 
@@ -160,53 +169,54 @@ rollback_web_sphere(){
 }
 
 
-case "$service_type" in
-    "dbs")
-        path=$dbs_ha_path
-        ;;
-    "platform")
-        path=$platform_ha_path
-        ;;
-    *)
-        echo "Choose action: dbs or platform"
-        exit 1
-        ;;
-esac
-
-module_name=$(find $path -maxdepth 1 -type d | grep -E "\.$port_of_service$")
-
-if [[ $module_name ]]; then
-    echo "********** Found MODULE: $module_name FROM PORT $port_of_service **********"
-else
-    echo "Module not found"
-    exit 1
-fi
-
-IFS='/' read -r -a module_name_arr <<< "$module_name"
-
 case "$action" in
-    "stop")
-        echo "Stop module ${module_name_arr[-1]}"
-        stop_module $module_name
+    "all")
+	    unzip ${web_sphere_path}${web_sphere_zip} -d ${web_sphere_path}
+        for service in "${bi_service[@]}"; do
+            service_path=$(get_service_path $service)
+            stop_module $service
+            backup_module $service_path $service
+            deploy_web_sphere $service_path $service $web_sphere_path $web_sphere_zip $web_sphere_directory            
+            verify_version $service_path $service
+			start_module $service_path $service
+        done
+        for service in "${be[@]}"; do
+            service_path=$(get_service_path $service)
+            # stop_module $service
+            backup_module $service_path $service
+            deploy_web_sphere $service_path $service $web_sphere_path $web_sphere_zip $web_sphere_directory                
+            verify_version $service_path $service
+        done
+        for service in "${exceptional_service[@]}"; do
+            service_path=$(get_service_path $service)
+            stop_module $service
+            backup_module $service_path $service
+            deploy_web_sphere $service_path $service $web_sphere_path $web_sphere_zip $web_sphere_directory                
+            verify_version $service_path $service
+			start_module $service_path $service
+        done
+        for service in "${pm_service[@]}"; do
+            service_path=$(get_service_path $service)
+            stop_module $service
+            backup_module $service_path "pm.wlp-17.0.0.4"
+            deploy_web_sphere $service_path "pm.wlp-17.0.0.4" $web_sphere_path $web_sphere_zip $web_sphere_directory                
+            verify_version $service_path "pm.wlp-17.0.0.4"
+			${service_path}/pm.wlp-17.0.0.4/bin/server start $service
+        done                        
         ;;
-    "start")
-        echo "Start module ${module_name_arr[-1]}"
-        start_module $module_name
-        ;;
-    "backup")
-        echo "Backup module ${module_name_arr[-1]}"
-        backup_module $path $module_name
-        ;;
-    "deploy")
-        echo "Deploy module ${module_name_arr[-1]}"
-        deploy_web_sphere $path $module_name $web_sphere_path $web_sphere_zip $web_sphere_directory
+    "verify")
+        verify_version $service_path $service
         ;;
     "rollback")
-        echo "Rollback module ${module_name_arr[-1]}"
-        rollback_web_sphere $path $module_name $backup_version
+        rollback_web_sphere $service_path $service $backup_version
+        verify_version $service_path $service
         ;;
     *)
-        echo "Choose action: start, stop, backup, deploy or rollback"
+        echo "Choose action: all, verify or rollback"
         exit 1
         ;;
 esac
+
+
+
+
